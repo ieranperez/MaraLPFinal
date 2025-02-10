@@ -11,9 +11,6 @@ import { usePersistentState } from "@/contexts/PersistentStateContext"
 import { supabase } from "@/lib/supabase"
 import { Label } from "@/components/ui/label"
 
-// Note: The price column is not yet added to the database.
-// It's being handled in the frontend for now.
-
 type Medication = {
   id: string
   name: string
@@ -30,20 +27,22 @@ type InventoryData = {
 
 export default function InventoryTab() {
   const { data, updateData } = usePersistentState("inventory")
-  const [medications, setMedications] = useState<Medication[]>([])
+  const [medications, setMedications] = useState<Medication[]>(data.medications || [])
   const [inventoryData, setInventoryData] = useState<InventoryData>({})
   const [newMedication, setNewMedication] = useState(data.newMedication || "")
   const [newPrice, setNewPrice] = useState(data.newPrice || 0)
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    fetchMedications()
+    if (!data.medications) {
+      fetchMedications()
+    }
     fetchInventoryData()
-  }, [])
+  }, [data.medications])
 
   const updatePersistentData = useCallback(() => {
-    updateData({ newMedication, newPrice })
-  }, [updateData, newMedication, newPrice])
+    updateData({ medications, newMedication, newPrice })
+  }, [updateData, medications, newMedication, newPrice])
 
   useEffect(() => {
     updatePersistentData()
@@ -51,12 +50,20 @@ export default function InventoryTab() {
 
   const fetchMedications = async () => {
     try {
-      const { data, error } = await supabase.from("medications").select("id, name, dispensary_quantity").order("name")
+      const { data, error } = await supabase
+        .from("medications")
+        .select("id, name, dispensary_quantity, price")
+        .order("name")
 
       if (error) throw error
 
-      // Add a default price of 0 if the price column doesn't exist
-      setMedications(data.map((med) => ({ ...med, price: 0 })))
+      const medicationsWithPrice = data.map((med) => ({
+        ...med,
+        price: med.price || 0, // Ensure price is set to 0 if it's null
+      }))
+
+      setMedications(medicationsWithPrice)
+      updateData({ medications: medicationsWithPrice })
     } catch (error) {
       console.error("Error fetching medications:", error)
       toast({
@@ -135,6 +142,7 @@ export default function InventoryTab() {
             : med.dispensary_quantity,
         })),
       )
+      updatePersistentData()
     } catch (error) {
       console.error("Error updating medication quantities:", error)
       toast({
@@ -152,14 +160,15 @@ export default function InventoryTab() {
     try {
       const { data, error } = await supabase
         .from("medications")
-        .insert([{ name: newMedication.toUpperCase(), dispensary_quantity: 0 }])
+        .insert([{ name: newMedication.toUpperCase(), dispensary_quantity: 0, price: newPrice }])
         .select()
 
       if (error) throw error
 
-      setMedications((prev) => [...prev, { ...data[0], price: newPrice }])
+      setMedications((prev) => [...prev, ...data])
       setNewMedication("")
       setNewPrice(0)
+      updatePersistentData()
       toast({
         title: "Success",
         description: "Medication added successfully",
@@ -184,6 +193,7 @@ export default function InventoryTab() {
       if (error) throw error
 
       setMedications((prev) => prev.filter((med) => med.id !== id))
+      updatePersistentData()
       toast({
         title: "Success",
         description: "Medication deleted successfully",
@@ -197,6 +207,28 @@ export default function InventoryTab() {
       })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleUpdatePrice = async (id: string, newPrice: number) => {
+    try {
+      const { error } = await supabase.from("medications").update({ price: newPrice }).eq("id", id)
+
+      if (error) throw error
+
+      setMedications((prev) => prev.map((med) => (med.id === id ? { ...med, price: newPrice } : med)))
+      updatePersistentData()
+      toast({
+        title: "Success",
+        description: "Medication price updated successfully",
+      })
+    } catch (error) {
+      console.error("Error updating medication price:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update medication price",
+        variant: "destructive",
+      })
     }
   }
 
@@ -255,7 +287,16 @@ export default function InventoryTab() {
                 <TableRow key={medication.id}>
                   <TableCell>{medication.name}</TableCell>
                   <TableCell>{medication.dispensary_quantity}</TableCell>
-                  <TableCell>{medication.price.toFixed(2)}</TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      value={medication.price}
+                      onChange={(e) => handleUpdatePrice(medication.id, Number(e.target.value))}
+                      min="0"
+                      step="0.01"
+                      className="w-24"
+                    />
+                  </TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"
