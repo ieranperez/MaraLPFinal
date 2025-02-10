@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Trash2 } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/components/ui/use-toast"
-import { usePersistentState } from "@/contexts/PersistentStateContext"
+import { usePersistentState } from "@/contexts/PersistentStateContext.tsx"
 import { supabase } from "@/lib/supabase"
 import { Label } from "@/components/ui/label"
 
